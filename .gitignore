@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+*.dylib
+venv/
+.venv/
+env/
+.env
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Model files
+*.pt
+*.pth
+*.onnx
+*.trt
+*.engine
+*.tflite
+*.pb
+*.h5
+src/models/*
+!src/models/.gitkeep
+
+# Uploads and results
+/tmp/
+uploads/
+results/
+*.mp4
+*.avi
+*.mkv
+*.log
+*.jsonl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/*.env
+
+# Data 
+data/*.jpg
+data/*.png
+data/*.jpeg
+data/*/images/
+data/*/labels/
+
+# Docs
+docs/
