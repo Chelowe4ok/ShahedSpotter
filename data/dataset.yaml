@@ -4,6 +4,6 @@ val: val/images
 test: test/images
 nc: 3
 names:
-- shahed
 - drone_other
 - not_drone
+- shahed

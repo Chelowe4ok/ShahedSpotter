@@ -27,7 +27,7 @@ WORKERS = 4 # number of CPU threads for data loading; set to 0 for single-thread
 DEVICE = "" # "" = auto-detect (cuda:0 / cpu)
 
 # ── class info (matches data/dataset.yaml) ───────────────
-CLASS_NAMES = ["shahed", "drone_other", "not_drone"]
+CLASS_NAMES = ["drone_other", "not_drone", "shahed"]
 NC = 3
 
 # ── thresholds (used in post-eval report) ───────────────────────────────────

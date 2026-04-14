@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['drone_other', 'not_drone', 'shahed']
+
+roboflow:
+  workspace: s-workspace-oh6np
+  project: s-workspace-oh6np
+  version: dataset
+  license: Private
+  url: https://app.roboflow.com/s-workspace-oh6np/s-workspace-oh6np/dataset
