@@ -2,11 +2,11 @@ task: detect
 mode: train
 model: yolo11n.pt
 data: E:\programs\embedded\course\ShahedSpotter\data\dataset.yaml
-epochs: 50
+epochs: 100
 time: null
-patience: 10
-batch: 16
-imgsz: 640
+patience: 20
+batch: 8
+imgsz: 960
 save: true
 save_period: -1
 cache: false
@@ -33,7 +33,7 @@ multi_scale: 0.0
 compile: false
 overlap_mask: true
 mask_ratio: 4
-dropout: 0.0
+dropout: 0.15
 val: true
 split: val
 save_json: false
@@ -80,6 +80,7 @@ warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 box: 7.5
 cls: 0.5
+cls_pw: 0.0
 dfl: 1.5
 pose: 12.0
 kobj: 1.0

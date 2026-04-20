@@ -1,16 +1,3 @@
-"""Video capture — dual-mode frame producer.
-
-LIVE mode:   Background thread reads from camera into a frame-skip queue (maxsize=2).
-             Oldest frame is dropped when a new one arrives so consumers always get
-             the freshest image. Camera disconnects trigger automatic reconnect after 5 s.
-
-FORENSIC mode: Sequential read from a video file (MP4/AVI/MKV).
-               No threading — caller iterates frames() at its own pace.
-
-Backend priority for LIVE (Jetson first, then plain OpenCV):
-    1. GStreamer pipeline (zero-copy ISP→GPU on Jetson)
-    2. Plain cv2.VideoCapture (fallback — RPi, desktop, tests)
-"""
 from __future__ import annotations
 
 import queue
@@ -51,10 +38,6 @@ class FrameProducer:
             self._stop_event = threading.Event()
             self._thread: Optional[threading.Thread] = None
             self._video_connected = False
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     @property
     def mode(self) -> str:

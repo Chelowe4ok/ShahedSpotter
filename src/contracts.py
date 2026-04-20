@@ -82,29 +82,6 @@ class Detection:
             raise ValueError(f"heading_deg must be in [0, 360), got {self.heading_deg}")
 
 
-@dataclass
-class MotionAnalysis:
-    """Output of the optical flow + motion analyzer (M5/M6)."""
-    flow_magnitude: np.ndarray                              # H×W float32
-    flow_direction: np.ndarray                              # H×W float32 (radians)
-    motion_mask: np.ndarray                                 # H×W bool
-    anomaly_score: float                                    # 0.0–1.0
-    ego_motion_compensated: bool
-    residual_flow_regions: List[Tuple[int, int, int, int]]  # Anomalous cluster bboxes
-
-    def __post_init__(self) -> None:
-        _check_confidence(self.anomaly_score, "anomaly_score")
-        if self.flow_magnitude.ndim != 2:
-            raise ValueError("flow_magnitude must be 2-D (H×W)")
-        if self.flow_direction.ndim != 2:
-            raise ValueError("flow_direction must be 2-D (H×W)")
-        if self.motion_mask.ndim != 2:
-            raise ValueError("motion_mask must be 2-D (H×W)")
-        if self.flow_magnitude.shape != self.flow_direction.shape:
-            raise ValueError("flow_magnitude and flow_direction must have the same shape")
-        for bbox in self.residual_flow_regions:
-            _check_bbox(bbox, "residual_flow_regions bbox")
-
 
 @dataclass
 class TrackedObject:
@@ -140,56 +117,3 @@ class TrackedObject:
             raise ValueError(f"speed_ms must be ≥ 0, got {self.speed_ms}")
         if self.time_to_closest_approach_s is not None and self.time_to_closest_approach_s < 0:
             raise ValueError(f"time_to_closest_approach_s must be ≥ 0, got {self.time_to_closest_approach_s}")
-
-
-@dataclass
-class FusedDetection:
-    """Final per-frame output of the fusion module. AC-3.5."""
-    timestamp: float
-    detected: bool
-    class_name: str
-    confidence: float                          # 0.0–1.0
-    threat_level: str                          # CRITIC | HIGH | ELEVATED | LOW | CLEAR
-    bbox: Optional[Tuple[int, int, int, int]]
-    flow_confirmed: bool
-    modalities_agreement: float                # 0.0–1.0
-    track_id: Optional[int]
-    track_maturity: int
-    tca_s: Optional[float]
-
-    def __post_init__(self) -> None:
-        _check_confidence(self.confidence)
-        _check_confidence(self.modalities_agreement, "modalities_agreement")
-        if self.threat_level not in VALID_THREAT_LEVELS:
-            raise ValueError(f"threat_level '{self.threat_level}' not in {VALID_THREAT_LEVELS}")
-        if self.class_name not in VALID_CLASS_NAMES:
-            raise ValueError(f"class_name '{self.class_name}' not in {VALID_CLASS_NAMES}")
-        if self.bbox is not None:
-            _check_bbox(self.bbox)
-        if self.track_maturity < 0:
-            raise ValueError(f"track_maturity must be ≥ 0, got {self.track_maturity}")
-        if self.tca_s is not None and self.tca_s < 0:
-            raise ValueError(f"tca_s must be ≥ 0, got {self.tca_s}")
-
-
-@dataclass
-class ForensicReport:
-    """Structured report produced by ForensicEngine."""
-    source_file: str
-    duration_s: float
-    total_frames: int
-    processing_time_s: float
-    detections: List[FusedDetection]
-    unique_tracks: int
-    track_summaries: List[Dict]
-    timeline: List[Dict]
-
-    def __post_init__(self) -> None:
-        if self.duration_s < 0:
-            raise ValueError(f"duration_s must be ≥ 0, got {self.duration_s}")
-        if self.total_frames < 0:
-            raise ValueError(f"total_frames must be ≥ 0, got {self.total_frames}")
-        if self.processing_time_s < 0:
-            raise ValueError(f"processing_time_s must be ≥ 0, got {self.processing_time_s}")
-        if self.unique_tracks < 0:
-            raise ValueError(f"unique_tracks must be ≥ 0, got {self.unique_tracks}")

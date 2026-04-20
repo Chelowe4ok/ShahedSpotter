@@ -1,7 +1,3 @@
-"""Image enhancement pipeline — CLAHE (LAB L-channel) + gray-world auto white balance.
-
-Applied before every YOLO inference call and as a training-time augmentation match.
-"""
 from __future__ import annotations
 
 import numpy as np

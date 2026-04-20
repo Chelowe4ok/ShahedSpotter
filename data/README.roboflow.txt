@@ -2,7 +2,7 @@
 ShahedSpot - vdataset s-workspace-oh6np
 ==============================
 
-This dataset was exported via roboflow.com on April 13, 2026 at 8:25 PM GMT
+This dataset was exported via roboflow.com on April 20, 2026 at 5:29 PM GMT
 
 Roboflow is an end-to-end computer vision platform that helps you
 * collaborate with your team on computer vision projects
@@ -17,7 +17,7 @@ visit https://github.com/roboflow/notebooks
 
 To find over 100k other datasets and pre-trained models, visit https://universe.roboflow.com
 
-The dataset includes 633 images.
+The dataset includes 1003 images.
 Shahed-136-UAV-birds-other--GuJW are annotated in YOLOv11 format.
 
 No pre-processing or augmentation was applied.

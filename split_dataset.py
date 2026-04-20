@@ -4,6 +4,9 @@ import shutil
 from pathlib import Path
 
 def split_dataset(base_folder_name='data', train_percent=0.8, val_percent=0.1, test_percent=0.1):
+
+    print("Start")
+
     # 1. Отримуємо абсолютний шлях до базової папки (data)
     # Це прибере будь-які проблеми з відносними шляхами у Windows
     root_path = Path(__file__).parent.resolve()

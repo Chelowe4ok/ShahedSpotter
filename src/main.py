@@ -2,10 +2,10 @@
 ShahedSpotter — main orchestrator.
 
 Pipeline per frame:
-    capture  →  detect   →  track  →   M7 output
+    capture -> detector.detect(frame) -> detections -> tracker.update(detections) -> tracked_objects -> draw
 
 Startup order:
-    config → mode → camera (LIVE) → warm-up → flow → tracker → fusion → API → loop
+    config → mode → camera (LIVE) → warm-up → flow → tracker → loop
 
 Run:
     python -m src.main                            # default config
@@ -19,8 +19,6 @@ import signal
 import threading
 import time
 from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor
-from pathlib import Path
 from typing import List, Optional
 
 import cv2
@@ -29,10 +27,9 @@ from loguru import logger
 
 from src.capture.video_capture import FrameProducer
 from src.config import Config, load_config
-from src.contracts import FusedDetection, Frame, MotionAnalysis, TrackedObject
-from src.detection.video_detector import VideoDetector
-from src.output.logger import DetectionLogger
+from src.contracts import Frame
 from src.output.hud_renderer import draw_detection_hud
+from src.tracking.ultralytics_byte_tracker_adapter import UltralyticsByteTrackerAdapter
 
 
 # ── global stop event ─────────────────────────────────────────────────────────
@@ -77,20 +74,13 @@ class Pipeline:
     def __init__(self, config: Config) -> None:
         self._cfg = config
 
-        logger.info("Initialising VideoDetector…")
-        self._detector = VideoDetector(
-            config.detection, config.camera.preprocessing
-        )
-
-        logger.info("Initialising DetectionLogger…")
-        self._logger = DetectionLogger(
-            config.output.log_path, config.output.log_max_mb
+        self._tracker = create_tracker(
+            config.detection,
+            intrinsics=getattr(config.camera, "intrinsics", None)
         )
 
         self._prev_frame: Optional[np.ndarray] = None
         self._flow_rois: List = []
-
-    # ── public API ────────────────────────────────────────────────────────────
 
     def step(
         self,
@@ -100,9 +90,11 @@ class Pipeline:
         if timestamp is None:
             timestamp = time.time()
 
-        detections = self._detector.detect(frame, self._flow_rois or None)
+        #detections = self._detector.detect(frame, self._flow_rois or None)
+        #tracked_objects = self._tracker.update(detections, timestamp=timestamp)
+        tracked_objects = self._tracker.update(frame, timestamp=timestamp)
 
-        return detections
+        return tracked_objects
 
     def run_live(
         self,
@@ -134,15 +126,15 @@ class Pipeline:
                     continue
 
                 try:
-                    detections = self._detector.detect(frame_obj.image)
+                    tracked_objects = self.step(frame_obj.image, timestamp=frame_obj.timestamp)
                 except Exception as exc:
                     logger.warning(f"Pipeline step error: {exc}")
-                    detections = []
+                    tracked_objects = []
 
                 fps = fps_counter.tick()
 
                 if show_preview and self._cfg.output.overlay_enabled:
-                    annotated = draw_detection_hud(frame_obj.image, detections, fps=fps)
+                    annotated = draw_detection_hud(frame_obj.image, tracked_objects, fps=fps)
                     cv2.imshow("ShahedSpotter", annotated)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         _stop_event.set()
@@ -162,9 +154,14 @@ class Pipeline:
         producer = FrameProducer(self._cfg.camera)
 
         for frame in producer.frames():
-            detections = self._detector.detect(frame.image)
+            tracked_objects = self.step(frame.image, timestamp=frame.timestamp)
 
-            annotated = draw_detection_hud(frame.image, detections, fps=0)
+            visible_tracks = [
+                t for t in tracked_objects
+                if t.track_state == "confirmed" and t.frames_tracked >= 3
+            ]
+            
+            annotated = draw_detection_hud(frame.image, visible_tracks, fps=0)
 
             cv2.imshow("Video", annotated)
 
@@ -174,6 +171,23 @@ class Pipeline:
         cv2.destroyAllWindows()
 # ── entry points ──────────────────────────────────────────────────────────────
 
+def create_tracker(
+    detection_config,
+    intrinsics=None
+):
+    return UltralyticsByteTrackerAdapter(
+            model_path=detection_config.model_path,
+            intrinsics=intrinsics,
+            #tracker="botsort",
+            tracker="bytetrack",
+            conf=detection_config.confidence_threshold,
+            iou=getattr(detection_config, "nms_iou_threshold", 0.45),
+            imgsz=getattr(detection_config, "imgsz", None),
+            device=getattr(detection_config, "device", None),
+            verbose=False,
+        )
+        
+    
 def run(
     config_path: str = "config/default.yaml",
     show_preview: bool = False,

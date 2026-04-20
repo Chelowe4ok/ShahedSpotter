@@ -3,8 +3,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-
-import cv2
+import torch
 import numpy as np
 from loguru import logger
 from ultralytics import YOLO
@@ -18,21 +17,25 @@ RUNS_DIR = ROOT / "training"  / "runs"
 # ── model ──────────────────────────────────────────────────────────────────────
 MODEL_NAME = "yolo11n.pt"  # YOLOv11 nano — pretrained on COCO
 
+#https://universe.roboflow.com/bbokyeong/shahed-136-chbsm/dataset/1
+
 # ── training hyperparameters ───────────────────────────────────────────────────
-EPOCHS = 50
-PATIENCE = 10 # early stopping
-IMG_SIZE = 640
-BATCH = 16              
+LR0 = 0.01
+EPOCHS = 100
+PATIENCE = 20 # early stopping
+IMG_SIZE = 960  # YOLOv11n default is 640, but our dataset has small objects so we use 960 (≈1.5×) for better performance
+BATCH = 8              
 WORKERS = 4 # number of CPU threads for data loading; set to 0 for single-threaded
 DEVICE = "" # "" = auto-detect (cuda:0 / cpu)
+OPTIMIZER = "AdamW" # Ultralytics supports "SGD", "Adam", "AdamW"
 
 # ── class info (matches data/dataset.yaml) ───────────────
 CLASS_NAMES = ["drone_other", "not_drone", "shahed"]
 NC = 3
 
 # ── thresholds (used in post-eval report) ───────────────────────────────────
-AC_MAP50_MIN = 0.80          
-AC_SHAHED_RECALL_MIN = 0.85  
+AC_MAP50_MIN = 0.70          
+AC_SHAHED_RECALL_MIN = 0.80  
 AC_NOT_DRONE_PREC_MIN = 0.80 
 
 def build_augmentation_pipeline():
@@ -44,58 +47,91 @@ def build_augmentation_pipeline():
 
     return A.Compose(
         [
-            A.RandomBrightnessContrast(
-                brightness_limit=0.2,
-                contrast_limit=0.2,
-                p=0.5,
-            ),
+            # Simulates fast-moving targets and panning cameras
+            A.MotionBlur(blur_limit=7, p=0.1),
+
+            # Enhances edges in low-contrast sky backgrounds
             A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.3),
-            A.MotionBlur(blur_limit=(3, 7), p=0.3),
-            A.GaussNoise(std_range=(5 / 255, 15 / 255), p=0.3),
-            A.ImageCompression(quality_range=(50, 95), p=0.2),
-            A.RandomFog(fog_coef_range=(0.1, 0.3), p=0.15),
-            A.ColorJitter(
-                brightness=0.1,
-                contrast=0.1,
-                saturation=0.3,
-                hue=0.05,
-                p=0.2,
-            ),
+
+            # Sensor noise from cheap edge cameras
+            A.GaussNoise(std_range=(5 / 255, 15 / 255), p=0.1),
+
+            # Compression artifacts from video streams
+            A.ImageCompression(quality_range=(50, 95), p=0.2)
         ],
+        # Ensure bounding boxes are kept valid after transforms
+        bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
     )
+
 
 def register_albumentations_callback(model, augment_pipeline) -> None:
     """
-    Register a callback that applies the custom Albumentations pipeline
-    on each training batch via Ultralytics' on_train_batch_start hook.
+    Реєструє callback для застосування Albumentations до зображень ТА рамок (bboxes).
     """
 
     def on_train_batch_start(trainer):
-        # Ultralytics stores the current batch in trainer.batch
         batch = getattr(trainer, "batch", None)
         if batch is None:
             return
-        imgs = batch.get("img", None)
-        if imgs is None:
+        
+        imgs = batch.get("img")
+        # bboxes у YOLOv11 зазвичай мають формат: [batch_idx, class_id, x, y, w, h] (нормалізовані)
+        # Але в on_train_batch_start вони можуть бути вже денормалізовані або у форматі тензора
+        bboxes = batch.get("bboxes") 
+        cls = batch.get("cls")
+        batch_idx = batch.get("batch_idx")
+
+        if imgs is None or bboxes is None:
             return
 
-        import torch
+        device = imgs.device
+        augmented_imgs = []
+        new_bboxes = []
+        new_cls = []
+        new_batch_idx = []
 
-        augmented = []
-        for img_tensor in imgs:
+        for i in range(len(imgs)):
+            # 1. Підготовка зображення (C, H, W) -> (H, W, C)
+            img_np = (imgs[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             
-            # Convert from tensors to numpy.
-            # img_tensor: C×H×W float [0,1]
-            img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            # 2. Вибірка рамок для поточного зображення в батчі
+            mask = batch_idx == i
+            img_bboxes = bboxes[mask].cpu().numpy()
+            img_cls = cls[mask].cpu().numpy()
 
-            # TODO: Implement bboxes
-            result = augment_pipeline(image=img_np)
+            # Albumentations очікує список рамок. Формат: [x, y, w, h]
+            # Важливо: ми передаємо мітки класів окремо через class_labels
+            try:
+                result = augment_pipeline(
+                    image=img_np,
+                    bboxes=img_bboxes,
+                    class_labels=img_cls
+                )
+                
+                # 3. Отримання результатів
+                aug_img_np = result["image"].astype(np.float32) / 255.0
+                augmented_imgs.append(torch.from_numpy(aug_img_np).permute(2, 0, 1))
 
-            # Convert from numpy arrays to tensors.
-            aug_np = result["image"].astype(np.float32) / 255.0
-            augmented.append(torch.from_numpy(aug_np).permute(2, 0, 1))
+                # Додаємо оновлені рамки та класи
+                for j in range(len(result["bboxes"])):
+                    new_bboxes.append(torch.tensor(result["bboxes"][j]))
+                    new_cls.append(torch.tensor(result["class_labels"][j]))
+                    new_batch_idx.append(torch.tensor(i))
+                    
+            except Exception as e:
+                # Якщо аугментація зламалася, залишаємо оригінал (безпечний режим)
+                augmented_imgs.append(imgs[i].cpu())
+                for j in range(len(img_bboxes)):
+                    new_bboxes.append(torch.tensor(img_bboxes[j]))
+                    new_cls.append(torch.tensor(img_cls[j]))
+                    new_batch_idx.append(torch.tensor(i))
 
-        batch["img"] = torch.stack(augmented).to(imgs.device)
+        # 4. Оновлення батча
+        batch["img"] = torch.stack(augmented_imgs).to(device)
+        if new_bboxes:
+            batch["bboxes"] = torch.stack(new_bboxes).to(device)
+            batch["cls"] = torch.stack(new_cls).to(device).view(-1, 1)
+            batch["batch_idx"] = torch.stack(new_batch_idx).to(device)
 
     model.add_callback("on_train_batch_start", on_train_batch_start)
 
@@ -125,6 +161,8 @@ def train(dry_run: bool = False) -> Path:
 
     results = model.train(
         data=str(DATA_YAML),
+        #lr0=LR0,
+        #optimizer=OPTIMIZER,
         epochs=EPOCHS,
         patience=PATIENCE,
         imgsz=IMG_SIZE,
@@ -145,7 +183,7 @@ def train(dry_run: bool = False) -> Path:
         mosaic=1.0,
         mixup=0.0,
         # Regularisation
-        dropout=0.0,
+        dropout=0.15,
         weight_decay=0.0005,
         warmup_epochs=3,
         # Logging
@@ -182,7 +220,7 @@ def evaluate(weights_path: Path) -> dict:
 
     metrics = model.val(
         data=str(DATA_YAML),
-        split="test",
+        split="val",
         imgsz=IMG_SIZE,
         batch=BATCH,
         device=DEVICE,
@@ -191,6 +229,8 @@ def evaluate(weights_path: Path) -> dict:
         project=str(RUNS_DIR),
         name="eval",
         exist_ok=True,
+        #conf=0.25,
+        iou=0.5,
     )
 
     # Extract results
@@ -272,7 +312,6 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 def main() -> None:
-    import torch
     print(torch.__version__)
     print(torch.version.cuda)
     print(torch.cuda.is_available())

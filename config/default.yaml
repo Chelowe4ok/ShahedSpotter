@@ -1,7 +1,7 @@
 mode: "forensic"  # "live" | "forensic"
 
 camera:
-  source: "file:C:/Users/chelo/Downloads/3.mp4"           # int=0 (device index) for live, or "file:<path>" for forensic
+  source: "file:C:/Users/chelo/Downloads/10.mp4"           # int=0 (device index) for live, or "file:<path>" for forensic
   width: 640
   height: 480
   fps: 15
@@ -30,33 +30,6 @@ tracker:
     process_noise: 0.01
     measurement_noise: 1.0
   trajectory_history: 300     # frames (~20 s at 15 FPS)
-
-optical_flow:
-  enabled: true
-  resolution: [320, 240]
-  farneback:
-    pyr_scale: 0.5
-    levels: 3
-    winsize: 15
-    iterations: 3
-  anomaly_threshold: 2.0      # px/frame residual magnitude
-  min_anomaly_area: 100       # px²
-  ego_motion:
-    ransac_threshold: 3.0
-    min_inliers: 20
-  sparse_fallback: true       # Switch to sparse-only if Farneback > 60 ms on RPi
-
-fusion:
-  video_base_weight: 0.65
-  flow_base_weight: 0.20
-  agreement_bonus: 0.15
-  threat_thresholds:
-    critic_confidence: 0.85
-    critic_tca_s: 60
-    high: 0.75
-    elevated: 0.50
-    low: 0.20
-  cooldown_ms: 3000
 
 output:
   api_port: 8080
