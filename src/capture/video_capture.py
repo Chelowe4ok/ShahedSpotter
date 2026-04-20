@@ -88,6 +88,7 @@ class FrameProducer:
 
         cap = self._open_file()
         self.frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.source_fps: float = cap.get(cv2.CAP_PROP_FPS) or 25.0
         frame_id = 0
         source_label = f"file:{Path(self._file_path).name}"
 

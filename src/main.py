@@ -15,6 +15,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import itertools
 import signal
 import threading
 import time
@@ -155,8 +156,17 @@ class Pipeline:
 
     def run_video(self):
         producer = FrameProducer(self._cfg.camera)
+        fps_counter = _FpsCounter()
+        frames_iter = producer.frames()
+        # Advance generator once so FrameProducer sets source_fps from the file header
+        first_frame = next(frames_iter, None)
+        if first_frame is None:
+            return
+        target_spf = 1.0 / getattr(producer, "source_fps", self._cfg.camera.fps)
 
-        for frame in producer.frames():
+        for frame in itertools.chain([first_frame], frames_iter):
+            t_start = time.perf_counter()
+
             tracked_objects = self.step(frame.image, timestamp=frame.timestamp)
             self._alerter.notify(tracked_objects)
 
@@ -164,12 +174,16 @@ class Pipeline:
                 t for t in tracked_objects
                 if t.track_state == "confirmed" and t.frames_tracked >= 3
             ]
-            
-            annotated = draw_detection_hud(frame.image, visible_tracks, fps=0)
+
+            fps = fps_counter.tick()
+            annotated = draw_detection_hud(frame.image, visible_tracks, fps=fps)
 
             cv2.imshow("Video", annotated)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            # Throttle to source FPS so forensic playback matches real time
+            elapsed = time.perf_counter() - t_start
+            wait_ms = max(1, int((target_spf - elapsed) * 1000))
+            if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
                 break
 
         cv2.destroyAllWindows()
