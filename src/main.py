@@ -28,6 +28,7 @@ from loguru import logger
 from src.capture.video_capture import FrameProducer
 from src.config import Config, load_config
 from src.contracts import Frame
+from src.output.alert_sound import DetectionAlerter
 from src.output.hud_renderer import draw_detection_hud
 from src.tracking.ultralytics_byte_tracker_adapter import UltralyticsByteTrackerAdapter
 
@@ -79,6 +80,7 @@ class Pipeline:
             intrinsics=getattr(config.camera, "intrinsics", None)
         )
 
+        self._alerter = DetectionAlerter(cooldown_s=3.0)
         self._prev_frame: Optional[np.ndarray] = None
         self._flow_rois: List = []
 
@@ -132,6 +134,7 @@ class Pipeline:
                     tracked_objects = []
 
                 fps = fps_counter.tick()
+                self._alerter.notify(tracked_objects)
 
                 if show_preview and self._cfg.output.overlay_enabled:
                     annotated = draw_detection_hud(frame_obj.image, tracked_objects, fps=fps)
@@ -155,6 +158,7 @@ class Pipeline:
 
         for frame in producer.frames():
             tracked_objects = self.step(frame.image, timestamp=frame.timestamp)
+            self._alerter.notify(tracked_objects)
 
             visible_tracks = [
                 t for t in tracked_objects
