@@ -1,7 +1,7 @@
 mode: "forensic"  # "live" | "forensic"
 
 camera:
-  source: "file:C:/Users/chelo/Downloads/10.mp4"           # int=0 (device index) for live, or "file:<path>" for forensic
+  source: "file:C:/Users/chelo/Downloads/demo.mp4"           # int=0 (device index) for live, or "file:<path>" for forensic
   width: 640
   height: 480
   fps: 30

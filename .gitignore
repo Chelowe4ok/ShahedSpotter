@@ -40,7 +40,7 @@ coverage.xml
 /tmp/
 uploads/
 results/
-*.mp4
+# *.mp4
 *.avi
 *.mkv
 *.log

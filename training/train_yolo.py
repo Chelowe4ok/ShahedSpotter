@@ -24,7 +24,7 @@ RUNS_DIR = ROOT / "training"  / "runs"
 MODEL_NAME = "yolo11n.pt"  # YOLOv11 nano — pretrained on COCO
 
 # ── training hyperparameters ───────────────────────────────────────────────────
-LR0 = 0.01
+LR0 = 0.001
 EPOCHS = 100
 PATIENCE = 20 # early stopping
 IMG_SIZE = 960  # YOLOv11n default is 640, but our dataset has small objects so we use 960 (≈1.5×) for better performance
