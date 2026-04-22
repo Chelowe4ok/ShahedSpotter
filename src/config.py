@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Literal
+from typing import Literal
 
 import yaml
 from loguru import logger
@@ -50,20 +50,8 @@ class DetectionConfig(BaseModel):
     confidence_threshold: float = Field(ge=0.0, le=1.0, default=0.30)
     nms_iou_threshold: float = Field(ge=0.0, le=1.0, default=0.45)
 
-class TrackerConfig(BaseModel):
-    track_thresh: float = Field(ge=0.0, le=1.0, default=0.35)
-    track_buffer: int = Field(gt=0, default=45)
-    match_thresh: float = Field(ge=0.0, le=1.0, default=0.75)
-    min_maturity_frames: int = Field(ge=1, default=5)
-    trajectory_history: int = Field(gt=0, default=300)
-
-
 class OutputConfig(BaseModel):
-    api_port: int = Field(ge=1, le=65535, default=8080)
-    log_path: str = "/var/log/shahed-spotter/detections.jsonl"
-    log_max_mb: int = Field(gt=0, default=100)
     overlay_enabled: bool = True
-    hud_trail_seconds: float = Field(gt=0, default=2.0)
 
 
 
@@ -71,7 +59,6 @@ class Config(BaseModel):
     mode: Literal["live", "forensic"] = "live"
     camera: CameraConfig
     detection: DetectionConfig
-    tracker: TrackerConfig = Field(default_factory=TrackerConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
 
 
@@ -80,7 +67,7 @@ def load_config(path: str | Path) -> Config:
 
     Raises:
         FileNotFoundError: If the config file does not exist.
-        ValueError: If the config is invalid (e.g., bad intrinsics — AC-5.7).
+        ValueError: If the config is invalid (e.g., bad intrinsics).
     """
     config_path = Path(path)
     if not config_path.exists():

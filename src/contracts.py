@@ -6,7 +6,7 @@ Do not create parallel or alternative data structures.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -21,7 +21,6 @@ CLASS_NAMES = {
     2: "shahed",
 }
 VALID_CLASS_NAMES = frozenset(CLASS_NAMES.values())
-VALID_THREAT_LEVELS = frozenset({"CRITIC", "HIGH", "ELEVATED", "LOW", "CLEAR"})
 VALID_TRACK_STATES = frozenset({"tentative", "confirmed", "coasting", "lost"})
 
 
@@ -63,27 +62,6 @@ class Frame:
 
 
 @dataclass
-class Detection:
-    """Single-frame detection output from the video detector."""
-    bbox: Tuple[int, int, int, int]   # x, y, w, h (pixels)
-    class_id: int                      # 0–2
-    class_name: str
-    confidence: float                  # 0.0–1.0
-    heading_deg: Optional[float]       # Estimated from flow + aspect ratio
-
-    def __post_init__(self) -> None:
-        _check_bbox(self.bbox)
-        _check_confidence(self.confidence)
-        if self.class_id not in VALID_CLASS_IDS:
-            raise ValueError(f"class_id must be in 0–2, got {self.class_id}")
-        if self.class_name not in VALID_CLASS_NAMES:
-            raise ValueError(f"class_name '{self.class_name}' not in {VALID_CLASS_NAMES}")
-        if self.heading_deg is not None and not (0.0 <= self.heading_deg < 360.0):
-            raise ValueError(f"heading_deg must be in [0, 360), got {self.heading_deg}")
-
-
-
-@dataclass
 class TrackedObject:
     """A track produced by the tracker, enriched with Kalman state."""
     track_id: int
@@ -99,8 +77,8 @@ class TrackedObject:
     track_state: str                         # tentative | confirmed | coasting | lost
     trajectory: List[Tuple[float, float, float]]  # [(x, y, timestamp), ...]
     time_to_closest_approach_s: Optional[float]
-    azimuth_deg: Optional[float] = None    # From camera intrinsics (AC-4.4)
-    elevation_deg: Optional[float] = None  # From camera intrinsics (AC-4.5)
+    azimuth_deg: Optional[float] = None    # From camera intrinsics
+    elevation_deg: Optional[float] = None  # From camera intrinsics
 
     def __post_init__(self) -> None:
         _check_bbox(self.bbox)

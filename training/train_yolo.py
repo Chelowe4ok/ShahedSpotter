@@ -3,13 +3,19 @@ import json
 import shutil
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import cv2
 import torch
 import numpy as np
 from loguru import logger
 from ultralytics import YOLO
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from src.config import PreprocessingConfig
+from src.preprocessing.image_enhance import ImageEnhancer
 DATA_YAML = ROOT / "data" / "dataset.yaml"
 MODELS_DIR = ROOT / "src" / "models"
 RUNS_DIR = ROOT / "training"  / "runs"
@@ -46,10 +52,10 @@ def build_augmentation_pipeline():
     return A.Compose(
         [
             # Simulates fast-moving targets and panning cameras
-            A.MotionBlur(blur_limit=7, p=0.1),
+            A.MotionBlur(blur_limit=7, p=0.05),
 
             # Enhances edges in low-contrast sky backgrounds
-            A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.3),
+            A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.15),
 
             # Sensor noise from cheap edge cameras
             A.GaussNoise(std_range=(5 / 255, 15 / 255), p=0.1),
@@ -62,20 +68,18 @@ def build_augmentation_pipeline():
     )
 
 
-def register_albumentations_callback(model, augment_pipeline) -> None:
-    """
-    Реєструє callback для застосування Albumentations до зображень ТА рамок (bboxes).
-    """
+def register_albumentations_callback(model, augment_pipeline, enhancer: ImageEnhancer) -> None:
+    """Registers a callback to apply deterministic preprocessing then Albumentations augmentations."""
 
     def on_train_batch_start(trainer):
         batch = getattr(trainer, "batch", None)
         if batch is None:
             return
-        
+
         imgs = batch.get("img")
-        # bboxes у YOLOv11 зазвичай мають формат: [batch_idx, class_id, x, y, w, h] (нормалізовані)
-        # Але в on_train_batch_start вони можуть бути вже денормалізовані або у форматі тензора
-        bboxes = batch.get("bboxes") 
+        # In YOLOv11, bboxes are typically formatted as [batch_idx, class_id, x, y, w, h] (normalised).
+        # In on_train_batch_start they may already be denormalised or in tensor format.
+        bboxes = batch.get("bboxes")
         cls = batch.get("cls")
         batch_idx = batch.get("batch_idx")
 
@@ -89,42 +93,46 @@ def register_albumentations_callback(model, augment_pipeline) -> None:
         new_batch_idx = []
 
         for i in range(len(imgs)):
-            # 1. Підготовка зображення (C, H, W) -> (H, W, C)
+            # 1. Convert image layout (C, H, W) -> (H, W, C)
             img_np = (imgs[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-            
-            # 2. Вибірка рамок для поточного зображення в батчі
+
+            # 2. Apply deterministic preprocessing: WB + CLAHE.
+            #    YOLO tensors are RGB; ImageEnhancer uses OpenCV (BGR) internally.
+            img_np = cv2.cvtColor(enhancer.process(cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)), cv2.COLOR_BGR2RGB)
+
+            # 3. Select bounding boxes for the current image in the batch
             mask = batch_idx == i
             img_bboxes = bboxes[mask].cpu().numpy()
             img_cls = cls[mask].cpu().numpy()
 
-            # Albumentations очікує список рамок. Формат: [x, y, w, h]
-            # Важливо: ми передаємо мітки класів окремо через class_labels
+            # Albumentations expects a list of bounding boxes in [x, y, w, h] format.
+            # Note: class labels are passed separately via class_labels.
             try:
                 result = augment_pipeline(
                     image=img_np,
                     bboxes=img_bboxes,
                     class_labels=img_cls
                 )
-                
-                # 3. Отримання результатів
+
+                # 4. Collect augmented results
                 aug_img_np = result["image"].astype(np.float32) / 255.0
                 augmented_imgs.append(torch.from_numpy(aug_img_np).permute(2, 0, 1))
 
-                # Додаємо оновлені рамки та класи
+                # Append updated bounding boxes and class labels
                 for j in range(len(result["bboxes"])):
                     new_bboxes.append(torch.tensor(result["bboxes"][j]))
                     new_cls.append(torch.tensor(result["class_labels"][j]))
                     new_batch_idx.append(torch.tensor(i))
-                    
+
             except Exception as e:
-                # Якщо аугментація зламалася, залишаємо оригінал (безпечний режим)
+                # If augmentation fails, keep the original image (safe fallback)
                 augmented_imgs.append(imgs[i].cpu())
                 for j in range(len(img_bboxes)):
                     new_bboxes.append(torch.tensor(img_bboxes[j]))
                     new_cls.append(torch.tensor(img_cls[j]))
                     new_batch_idx.append(torch.tensor(i))
 
-        # 4. Оновлення батча
+        # 5. Update the batch with augmented data
         batch["img"] = torch.stack(augmented_imgs).to(device)
         if new_bboxes:
             batch["bboxes"] = torch.stack(new_bboxes).to(device)
@@ -150,7 +158,8 @@ def train(dry_run: bool = False) -> Path:
         return Path("dry_run")
 
     augment = build_augmentation_pipeline()
-    register_albumentations_callback(model, augment)
+    enhancer = ImageEnhancer(PreprocessingConfig())
+    register_albumentations_callback(model, augment, enhancer)
 
     logger.info(
         f"Starting training: {EPOCHS} epochs, patience={PATIENCE}, "
@@ -263,17 +272,17 @@ def evaluate(weights_path: Path) -> dict:
     # AC checks
     logger.info("── AC checks ───────────────────────────────────────────")
     _ac(
-        "AC-1.1", "mAP@0.5",
+        "mAP@0.5",
         map50, AC_MAP50_MIN,
     )
     shahed = report["per_class"]["shahed"]
     _ac(
-        "AC-1.4", "shahed recall",
+        "shahed recall",
         shahed["recall"], AC_SHAHED_RECALL_MIN,
     )
     not_drone = report["per_class"]["not_drone"]
     _ac(
-        "AC-1.5", "not_drone precision",
+        "not_drone precision",
         not_drone["precision"], AC_NOT_DRONE_PREC_MIN,
     )
 
@@ -285,9 +294,9 @@ def evaluate(weights_path: Path) -> dict:
 
     return report
 
-def _ac(ac_id: str, metric_name: str, value: float, threshold: float) -> None:
+def _ac(metric_name: str, value: float, threshold: float) -> None:
     status = "PASS" if value >= threshold else "FAIL"
-    logger.info(f"  {ac_id} [{status}] {metric_name} = {value:.4f} (threshold ≥ {threshold})")
+    logger.info(f" [{status}] {metric_name} = {value:.4f} (threshold ≥ {threshold})")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ShahedSpotter YOLOv11n training")
@@ -327,9 +336,8 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 def export_model(weights_path: Path, format: str = "engine", int8: bool = False) -> Path:
-    """
-    Експортує навчену YOLO модель у вказаний формат (за замовчуванням TensorRT)
-    з підтримкою FP16 (half) або INT8 квантизації.
+    """Export a trained YOLO model to the specified format (default: TensorRT)
+    with FP16 (half) or INT8 quantisation support.
     """
     if not weights_path.exists():
         logger.error(f"Weights not found: {weights_path}")
@@ -342,11 +350,11 @@ def export_model(weights_path: Path, format: str = "engine", int8: bool = False)
         exported_path = model.export(
             format=format,
             int8=int8,
-            half=not int8,            # Використовувати FP16, якщо не INT8
-            dynamic=True,             # Дозволяє динамічний розмір батчу
-            data=str(DATA_YAML) if int8 else None, # Потрібен датасет для калібрування INT8
+            half=not int8,            # Use FP16 if INT8 is not requested
+            dynamic=True,             # Allow dynamic batch size
+            data=str(DATA_YAML) if int8 else None,  # Dataset required for INT8 calibration
             device=DEVICE,
-            workspace=4               # Виділення пам'яті (ГБ) для побудови двигуна
+            workspace=4               # TensorRT engine build memory allocation (GB)
         )
         logger.info(f"Export successful! Saved to: {exported_path}")
         return Path(exported_path)

@@ -2,7 +2,7 @@
 ShahedSpotter — main orchestrator.
 
 Pipeline per frame:
-    capture -> detector.detect(frame) -> detections -> tracker.update(detections) -> tracked_objects -> draw
+    capture -> enhancer.process(frame) -> tracker.update(frame) -> tracked_objects -> draw
 
 Startup order:
     config → mode → camera (LIVE) → warm-up → flow → tracker → loop
@@ -31,6 +31,7 @@ from src.config import Config, load_config
 from src.contracts import Frame
 from src.output.alert_sound import DetectionAlerter
 from src.output.hud_renderer import draw_detection_hud
+from src.preprocessing.image_enhance import ImageEnhancer
 from src.tracking.ultralytics_byte_tracker_adapter import UltralyticsByteTrackerAdapter
 
 
@@ -76,6 +77,7 @@ class Pipeline:
     def __init__(self, config: Config) -> None:
         self._cfg = config
 
+        self._enhancer = ImageEnhancer(config.camera.preprocessing)
         self._tracker = create_tracker(
             config.detection,
             intrinsics=getattr(config.camera, "intrinsics", None)
@@ -92,6 +94,7 @@ class Pipeline:
         if timestamp is None:
             timestamp = time.time()
 
+        frame = self._enhancer.process(frame)
         roi = self._build_roi(frame.shape, self._last_tracked)
         tracked_objects = self._tracker.update(frame, timestamp=timestamp, roi=roi)
         self._last_tracked = tracked_objects
@@ -248,7 +251,7 @@ def run(
         pipeline.run_live(show_preview=show_preview)
     
     else:
-        # FORENSIC: just keep the process alive for upload-triggered jobs
+        # FORENSIC: process video file specified in config.camera.source
         logger.info("FORENSIC mode")
         pipeline.run_video()
 
