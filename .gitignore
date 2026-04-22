@@ -25,15 +25,15 @@ coverage.xml
 *.cover
 
 # Model files
-*.pt
-*.pth
-*.onnx
-*.trt
-*.engine
-*.tflite
+# *.pt
+# *.pth
+# *.onnx
+# *.trt
+# *.engine
+# *.tflite
 *.pb
 *.h5
-src/models/*
+#src/models/*
 !src/models/.gitkeep
 
 # Uploads and results
@@ -58,11 +58,11 @@ Thumbs.db
 docker/*.env
 
 # Data 
-data/*.jpg
-data/*.png
-data/*.jpeg
-data/*/images/
-data/*/labels/
+# data/*.jpg
+# data/*.png
+# data/*.jpeg
+# data/*/images/
+# data/*/labels/
 
 # Docs
 docs/
