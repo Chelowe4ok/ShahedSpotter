@@ -17,8 +17,6 @@ RUNS_DIR = ROOT / "training"  / "runs"
 # ── model ──────────────────────────────────────────────────────────────────────
 MODEL_NAME = "yolo11n.pt"  # YOLOv11 nano — pretrained on COCO
 
-#https://universe.roboflow.com/bbokyeong/shahed-136-chbsm/dataset/1
-
 # ── training hyperparameters ───────────────────────────────────────────────────
 LR0 = 0.01
 EPOCHS = 100
@@ -161,8 +159,8 @@ def train(dry_run: bool = False) -> Path:
 
     results = model.train(
         data=str(DATA_YAML),
-        #lr0=LR0,
-        #optimizer=OPTIMIZER,
+        lr0=LR0,
+        optimizer=OPTIMIZER,
         epochs=EPOCHS,
         patience=PATIENCE,
         imgsz=IMG_SIZE,
@@ -229,7 +227,6 @@ def evaluate(weights_path: Path) -> dict:
         project=str(RUNS_DIR),
         name="eval",
         exist_ok=True,
-        #conf=0.25,
         iou=0.5,
     )
 
@@ -309,7 +306,53 @@ def parse_args() -> argparse.Namespace:
         "--batch", type=int, default=BATCH,
         help=f"Batch size (default {BATCH})",
     )
+
+    # --- Exports ---
+    p.add_argument(
+        "--export-only",
+        metavar="WEIGHTS",
+        default=None,
+        help="Skip training, export given weights file (e.g. for Jetson)",
+    )
+    p.add_argument(
+        "--format", type=str, default="engine",
+        help="Export format: 'engine' (TensorRT) or 'ncnn' (Raspberry Pi)",
+    )
+    p.add_argument(
+        "--int8", action="store_true", 
+        help="Apply INT8 quantization (requires --export-only or triggers after train)",
+    )
+    # -----------------------------------
+
     return p.parse_args()
+
+def export_model(weights_path: Path, format: str = "engine", int8: bool = False) -> Path:
+    """
+    Експортує навчену YOLO модель у вказаний формат (за замовчуванням TensorRT)
+    з підтримкою FP16 (half) або INT8 квантизації.
+    """
+    if not weights_path.exists():
+        logger.error(f"Weights not found: {weights_path}")
+        sys.exit(1)
+
+    logger.info(f"Starting export of {weights_path} to '{format}' (INT8={int8}) ...")
+    model = YOLO(str(weights_path))
+
+    try:
+        exported_path = model.export(
+            format=format,
+            int8=int8,
+            half=not int8,            # Використовувати FP16, якщо не INT8
+            dynamic=True,             # Дозволяє динамічний розмір батчу
+            data=str(DATA_YAML) if int8 else None, # Потрібен датасет для калібрування INT8
+            device=DEVICE,
+            workspace=4               # Виділення пам'яті (ГБ) для побудови двигуна
+        )
+        logger.info(f"Export successful! Saved to: {exported_path}")
+        return Path(exported_path)
+    except Exception as e:
+        logger.error(f"Export failed: {e}")
+        sys.exit(1)
 
 def main() -> None:
     print(torch.__version__)
@@ -326,6 +369,11 @@ def main() -> None:
     logger.info(f"Dataset YAML : {DATA_YAML}")
     logger.info(f"Runs dir     : {RUNS_DIR}")
     logger.info(f"Models dir   : {MODELS_DIR}")
+
+    if args.export_only:
+        weights = Path(args.export_only)
+        export_model(weights, format=args.format, int8=args.int8)
+        return
 
     if args.eval_only:
         weights = Path(args.eval_only)

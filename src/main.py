@@ -82,8 +82,7 @@ class Pipeline:
         )
 
         self._alerter = DetectionAlerter(cooldown_s=3.0)
-        self._prev_frame: Optional[np.ndarray] = None
-        self._flow_rois: List = []
+        self._last_tracked: List = []
 
     def step(
         self,
@@ -93,11 +92,40 @@ class Pipeline:
         if timestamp is None:
             timestamp = time.time()
 
-        #detections = self._detector.detect(frame, self._flow_rois or None)
-        #tracked_objects = self._tracker.update(detections, timestamp=timestamp)
-        tracked_objects = self._tracker.update(frame, timestamp=timestamp)
+        roi = self._build_roi(frame.shape, self._last_tracked)
+        tracked_objects = self._tracker.update(frame, timestamp=timestamp, roi=roi)
+        self._last_tracked = tracked_objects
 
         return tracked_objects
+
+    @staticmethod
+    def _build_roi(
+        frame_shape: tuple,
+        tracked_objects: List,
+        margin: int = 150,
+    ) -> Optional[tuple]:
+        """
+        Build a union ROI around confirmed shahed tracks only, expanded by *margin*
+        pixels on each side.  Returns None (→ full frame) when no shahed is tracked.
+        Non-shahed detections (birds, other drones) are intentionally excluded so the
+        ROI does not follow false positives away from the actual threat.
+        """
+        shaheds = [t for t in tracked_objects if t.class_name == "shahed"]
+        if not shaheds:
+            return None
+
+        fh, fw = frame_shape[:2]
+        min_x = min(t.bbox[0] for t in shaheds)
+        min_y = min(t.bbox[1] for t in shaheds)
+        max_x = max(t.bbox[0] + t.bbox[2] for t in shaheds)
+        max_y = max(t.bbox[1] + t.bbox[3] for t in shaheds)
+
+        x  = max(0, min_x - margin)
+        y  = max(0, min_y - margin)
+        x2 = min(fw, max_x + margin)
+        y2 = min(fh, max_y + margin)
+
+        return (x, y, x2 - x, y2 - y)
 
     def run_live(
         self,

@@ -94,14 +94,25 @@ class UltralyticsByteTrackerAdapter:
         self,
         frame: np.ndarray,
         timestamp: Optional[float] = None,
+        roi: Optional[tuple] = None,  # (x, y, w, h) in full-frame pixel coords
     ) -> List[TrackedObject]:
         if frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError(f"Expected HxWx3 BGR frame, got shape {frame.shape}")
         if frame.dtype != np.uint8:
             raise ValueError(f"Expected uint8 frame, got {frame.dtype}")
 
+        # Crop to ROI if provided; remember offset to restore full-frame coords later
+        roi_x, roi_y = 0, 0
+        source = frame
+        if roi is not None:
+            rx, ry, rw, rh = roi
+            source = frame[ry : ry + rh, rx : rx + rw]
+            roi_x, roi_y = rx, ry
+            logger.debug(f"ROI inference: crop ({rx},{ry},{rw},{rh}), "
+                         f"full frame {frame.shape[1]}x{frame.shape[0]}")
+
         track_kwargs = {
-            "source": frame,
+            "source": source,
             "persist": True,
             "tracker": self._tracker,
             "conf": self._conf,
@@ -128,6 +139,12 @@ class UltralyticsByteTrackerAdapter:
         boxes_cpu = boxes.cpu()
 
         xywh = boxes_cpu.xywh.numpy() if boxes_cpu.xywh is not None else np.empty((0, 4))
+
+        # Translate ROI-relative centres back to full-frame coordinates
+        if roi_x or roi_y:
+            xywh = xywh.copy()
+            xywh[:, 0] += roi_x  # x_center
+            xywh[:, 1] += roi_y  # y_center
         cls = boxes_cpu.cls.numpy().astype(int) if boxes_cpu.cls is not None else np.empty((0,), dtype=int)
         conf = boxes_cpu.conf.numpy() if boxes_cpu.conf is not None else np.empty((0,), dtype=float)
 

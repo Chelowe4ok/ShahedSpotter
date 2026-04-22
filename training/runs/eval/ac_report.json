@@ -1,21 +1,21 @@
 {
-  "mAP@0.5": 0.8351,
-  "mAP@0.5:0.95": 0.5391,
+  "mAP@0.5": 0.8208,
+  "mAP@0.5:0.95": 0.5331,
   "per_class": {
     "drone_other": {
-      "AP@0.5": 0.8725,
-      "recall": 0.8186,
-      "precision": 0.7974
+      "AP@0.5": 0.7915,
+      "recall": 0.7964,
+      "precision": 0.793
     },
     "not_drone": {
-      "AP@0.5": 0.772,
-      "recall": 0.6449,
-      "precision": 0.8263
+      "AP@0.5": 0.7911,
+      "recall": 0.7252,
+      "precision": 0.8106
     },
     "shahed": {
-      "AP@0.5": 0.8608,
-      "recall": 0.8283,
-      "precision": 0.7485
+      "AP@0.5": 0.8797,
+      "recall": 0.8636,
+      "precision": 0.8028
     }
   }
 }

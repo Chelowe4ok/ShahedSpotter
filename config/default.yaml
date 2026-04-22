@@ -4,7 +4,7 @@ camera:
   source: "file:C:/Users/chelo/Downloads/10.mp4"           # int=0 (device index) for live, or "file:<path>" for forensic
   width: 640
   height: 480
-  fps: 15
+  fps: 30
   intrinsics:
     fx: 600.0         # Focal length X (pixels)
     fy: 600.0         # Focal length Y (pixels)
@@ -23,13 +23,13 @@ detection:
 
 tracker:
   track_thresh: 0.35
-  track_buffer: 45            # frames (~3 s at 15 FPS)
+  track_buffer: 90            # frames (~3 s at 30 FPS)
   match_thresh: 0.75
   min_maturity_frames: 5
   kalman:
     process_noise: 0.01
     measurement_noise: 1.0
-  trajectory_history: 300     # frames (~20 s at 15 FPS)
+  trajectory_history: 600     # frames (~20 s at 30 FPS)
 
 output:
   api_port: 8080
